@@ -29,7 +29,7 @@ class EquipamentoCreate(BaseModel):
 
 app = FastAPI()
 
-# --- ROTAS CRUD ---
+#ROTAS
 
 # Rota para LISTAR tudo (Read)
 @app.get("/equipamentos")
@@ -40,15 +40,29 @@ def listar_equipamentos():
     return itens
 
 # Rota para ADICIONAR novo (Create)
+# Rota para ADICIONAR novo (com trava contra duplicados)
 @app.post("/equipamentos")
 def criar_equipamento(item: EquipamentoCreate):
     db = SessionLocal()
+    
+    # 1. PASSO NOVO: Procurar se já existe alguém com essa mesma série
+    item_duplicado = db.query(EquipamentoDB).filter(EquipamentoDB.serie == item.serie).first()
+    
+    # 2. Se encontrar algo, ele para aqui e avisa o erro
+    if item_duplicado:
+        db.close()
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Erro: Já existe um equipamento cadastrado com a série {item.serie}!"
+        )
+    
+    # 3. Se não encontrar, ele segue o baile e cadastra normal
     novo_item = EquipamentoDB(nome=item.nome, marca=item.marca, serie=item.serie)
     db.add(novo_item)
     db.commit()
     db.refresh(novo_item)
     db.close()
-    return {"mensagem": "Equipamento cadastrado!", "dados": novo_item}
+    return {"mensagem": "Equipamento cadastrado com sucesso!", "dados": novo_item}
 
 # Rota para DELETAR (Delete)
 @app.delete("/equipamentos/{item_id}")
@@ -63,3 +77,24 @@ def deletar_equipamento(item_id: int):
     db.commit()
     db.close()
     return {"mensagem": f"Item {item_id} deletado com sucesso!"}
+
+# Rota para ATUALIZAR um item (Update)
+@app.put("/equipamentos/{item_id}")
+def atualizar_equipamento(item_id: int, dados_novos: EquipamentoCreate):
+    db = SessionLocal()
+    # 1. Procura o item pelo ID
+    item_existente = db.query(EquipamentoDB).filter(EquipamentoDB.id == item_id).first()
+    
+    if not item_existente:
+        db.close()
+        raise HTTPException(status_code=404, detail="Item não encontrado")
+    
+    # 2. Muda os valores antigos pelos novos
+    item_existente.nome = dados_novos.nome
+    item_existente.marca = dados_novos.marca
+    item_existente.serie = dados_novos.serie
+    
+    # 3. Salva no banco
+    db.commit()
+    db.close()
+    return {"mensagem": "Item atualizado com sucesso!"}
